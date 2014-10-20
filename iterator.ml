@@ -88,10 +88,10 @@ module TakeIterator : TAKE_ITERATOR = functor (I : ITERATOR) -> struct
 
   let next (r : 'a t) : 'a = 
     let (n,i) = !r in
-    if n = 0 then 
+    if n = 0 || not(has_next r) then 
       raise NoResult
     else 
-      r := (n-1, i); (I.next i)
+      r := (n-1, i);  I.next i
 end
 
 
@@ -140,8 +140,8 @@ module RangeIterator : RANGE_ITERATOR = functor (I : ITERATOR) -> struct
       Take.create (fin-start+1) iter
     with _-> raise NoResult
 
-  let has_next i = try Take.has_next i with _-> raise NoResult
+  let has_next i = Take.has_next i
 
-  let next i = try Take.next i with _ -> raise NoResult
+  let next i = if has_next i then Take.next i else raise NoResult
 end
 
