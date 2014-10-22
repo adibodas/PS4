@@ -132,6 +132,12 @@ let rec read_expression (input : datum) : expression =
 (* Parses a datum into a toplevel input. *)
 let read_toplevel (input : datum) : toplevel =
   match input with
+  | Cons (Atom (Identifier (i)),Cons(Atom (Identifier var),Cons(exp,Nil))) when Identifier.string_of_identifier i = "define" ->
+    print_endline "hello";
+    if Identifier.is_valid_variable var then
+      ToplevelDefinition (Identifier.variable_of_identifier var,read_expression exp)
+    else
+      failwith "Invalid define syntax."
   | _ -> ToplevelExpression (read_expression input)
 
 (* This function returns an initial environment with any built-in
@@ -267,6 +273,6 @@ let eval_toplevel (toplevel : toplevel) (env : environment) :
       value * environment =
   match toplevel with
   | ToplevelExpression expression -> (eval expression env, env)
-  | ToplevelDefinition (_, _)     ->
-     failwith "I couldn't have done it without the Rower!"
+  | ToplevelDefinition (var, exp)     ->
+    (ValDatum(Nil),Environment.add_binding env (var, ref (eval exp env)))
 
