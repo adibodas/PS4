@@ -25,7 +25,7 @@ zardoz> () ; A valid datum, but not a valid expression
 Failure("Unknown expression form")
 zardoz> #bindings
 
-eqv? -> #<builtin>, * -> #<builtin>, + -> #<builtin>, cons -> #<builtin>, cdr -> #<builtin>, car -> #<builtin>, course -> 3110
+equal? -> #<builtin>, * -> #<builtin>, + -> #<builtin>, cons -> #<builtin>, cdr -> #<builtin>, car -> #<builtin>, course -> 3110
 zardoz> course ; Evaluating a predefined identifier
 
 3110
@@ -166,11 +166,11 @@ zardoz> ;; Below we use mutual recursion, where even? and odd? both call one
         ;; another.  We've mentioned that you can do this in OCaml, but you've
         ;; never had to before.
         (letrec ((even? (lambda (x)
-                          (if (eqv? x 0)
+                          (if (equal? x 0)
                               #t
                             (odd? (+ x -1)))))
                  (odd? (lambda (x)
-                         (if (eqv? x 0)
+                         (if (equal? x 0)
                              #f
                            (even? (+ x -1))))))
           (even? 5))
