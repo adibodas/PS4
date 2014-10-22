@@ -13,11 +13,32 @@ and value =
 and binding = value ref Environment.binding
 and environment = value ref Environment.environment
 
+let rec string_of_value value =
+  let rec string_of_datum datum =
+    match datum with
+    | Atom (Boolean b) -> if b then "#t" else "#f"
+    | Atom (Integer n) -> string_of_int n
+    | Atom (Identifier id) -> Identifier.string_of_identifier id
+    | Nil -> "()"
+    | Cons (car, cdr) -> string_of_cons car cdr
+
+  and string_of_cons car cdr =
+    let rec strings_of_cons cdr =
+      match cdr with
+      | Nil -> []
+      | Cons (car, cdr) -> (string_of_datum car) :: (strings_of_cons cdr)
+      | _ -> ["."; string_of_datum cdr;] in
+    let string_list = (string_of_datum car) :: (strings_of_cons cdr) in
+    "(" ^ (String.concat " " string_list) ^ ")" in
+  
+  match value with
+  | ValDatum (datum) -> string_of_datum datum
+  | ValProcedure (ProcBuiltin p) -> "#<builtin>"
+  | ValProcedure (ProcLambda (_, _, _)) -> "#<lambda>"
+
 (* Parses a datum into an expression. *)
 let rec read_expression (input : datum) : expression =
   match input with
-
-  | Nil -> failwith "idk, man"
 
   | Atom (Identifier id) when Identifier.is_valid_variable id ->
       ExprVariable (Identifier.variable_of_identifier id)
@@ -30,51 +51,78 @@ let rec read_expression (input : datum) : expression =
 
   | Atom (Boolean b) -> ExprSelfEvaluating (SEBoolean b)
 
-  | Cons (Atom (Identifier i),cdr) when Identifier.is_keyword i -> 
-    (match Identifier.string_of_identifier i with
-    | "quote" -> 
-      (match cdr with
-      | Cons(d,Nil) -> ExprQuote d
-      | _ -> failwith "Invalid call of quote.")
-    | "if" -> 
-      (match cdr with
-       | (Cons(guard,Cons(e1,Cons(e2,Nil)))) -> 
-         ExprIf (read_expression guard,read_expression e1,read_expression e2)
-       | _ -> failwith "Invalid \"if\" expression."
-      )
-    (* | "lambda" -> 
-      let rec var_ids input acc =
-        match input with
-         | Nil -> acc
-         | Cons (Atom(Identifier id),t) -> var_ids t (id::acc) 
-         | _ -> failwith "Invalid variable bindings in lambda expression." in 
-      let rec exps input acc =
-        match input with
-         | Nil -> acc
-         | Cons (h,t) -> exps t ((read_expression h)::acc)
-         | _ -> failwith "Invalid exp. list in lambda expression." in
-      match cdr with
-      | Cons (vars,es) -> ExprLambda (var_ids vars) (exps es)
-      | _ -> failwith "Invalid lambda syntax"
-    | "define" | "set!" -> 
-      (match cdr with 
-       | (Cons(id,exp)) -> ExprAssignment id (read_expression exp)
-       | _ -> failwith "Invalid assignment of variable."
-      ) *)
-    | _ -> failwith "Not implemented")
+  | Cons (Atom (Identifier i),cdr) when Identifier.string_of_identifier i = "quote" -> 
+    (match cdr with
+    | Cons(d,Nil) -> ExprQuote d
+    | _ -> failwith "Invalid call of quote.")
 
-  | Cons (Atom (Identifier i),cdr) ->
+  | Cons (Atom (Identifier i),cdr) when Identifier.string_of_identifier i = "if" ->
+    (match cdr with
+    | (Cons(guard,Cons(e1,Cons(e2,Nil)))) -> 
+      ExprIf (read_expression guard,read_expression e1,read_expression e2)
+    | _ -> failwith "Invalid \"if\" expression."
+    )
+
+  | Cons (Atom (Identifier i),Cons (vars,exps)) when Identifier.string_of_identifier i = "lambda"  ->
+    print_endline "lambda";
+    let rec parse_vars input acc =
+      print_endline "1";
+      match input with
+      | Cons (Atom(Identifier id),Nil) -> List.rev ((Identifier.variable_of_identifier id)::acc)
+      | Cons (Atom(Identifier id),t) -> 
+        if Identifier.is_valid_variable id && not (List.mem (Identifier.variable_of_identifier id) acc) then
+          parse_vars t ((Identifier.variable_of_identifier id)::acc)
+        else  
+          failwith "Invalid variable names."
+       | _ -> failwith "Invalid variable bindings in lambda expression." in 
+    let rec parse_exps input acc =
+      print_endline "2";
+      match input with
+      | Cons (exp,Nil) -> List.rev ((read_expression exp)::[])
+      | Cons (h,t) -> parse_exps t ((read_expression h)::acc)
+      | d -> [read_expression d] in
+    (match exps with
+    | Nil -> failwith "Invalid lambda syntax"
+    | _ -> ExprLambda ((parse_vars vars []),(parse_exps exps [])))
+    
+(*| Cons (Atom (Identifier i),cdr) when i = "define" 
+  | Cons (Atom (Identifier i),cdr) when i = "set!"
+    (match cdr with 
+    | (Cons(id,exp)) -> ExprAssignment id (read_expression exp)
+    | _ -> failwith "Invalid assignment of variable."
+    ) *)
+
+  | Cons (Atom (Identifier id),cdr) ->
+    print_endline (Identifier.string_of_identifier id);
     let rec parse_args lst acc =
       match lst with
       | Cons(arg,Nil) -> List.rev((read_expression arg)::acc)
       | Cons(arg,tail) -> parse_args tail ((read_expression arg)::acc)
       | _ -> failwith "Invalid arguments." in
-    if Identifier.is_valid_variable i then
-      let var = Identifier.variable_of_identifier i in
+    if Identifier.is_valid_variable id then
+      let var = Identifier.variable_of_identifier id in
       ExprProcCall ((ExprVariable var), parse_args cdr [])
     else 
       failwith "Variable is not valid."
 
+  | Cons (
+      (Cons (
+        (Atom (Identifier id)),
+        _) as lambda),
+      args) 
+      when Identifier.string_of_identifier id = "lambda" 
+      -> 
+    print_endline "lambda_call";
+    let rec parse_args lst acc =
+      match lst with
+      | Cons(arg,Nil) -> List.rev((read_expression arg)::acc)
+      | Cons(arg,tail) -> parse_args tail ((read_expression arg)::acc)
+      | _ -> failwith "Invalid arguments." in
+    let result = read_expression lambda in
+    (match result with
+    | ExprLambda _ -> ExprProcCall (result, parse_args args [])
+    | _ -> failwith "Invalid lambda syntax (also this case should fail earlier)."
+    )
   | _ -> failwith "Not implemented"
 
 
@@ -161,7 +209,8 @@ and eval (expression : expression) (env : environment) : value =
   | ExprQuote d ->
       ValDatum d
 
-  | ExprLambda (_,_) -> failwith "Sing along with me as I row my boat!'"
+  | ExprLambda (vars,exps) -> 
+      ValProcedure(ProcLambda (vars,env,exps))
 
   | ExprProcCall (ExprVariable var,lst) ->
     if Environment.is_bound env var then 
@@ -173,10 +222,26 @@ and eval (expression : expression) (env : environment) : value =
           | [] -> acc
           | h::t -> parse_args t ((eval h env)::acc) in
         p (List.rev((parse_args lst []))) env
-      | ValProcedure(ProcLambda _) -> failwith "TODO"
+      | ValProcedure(ProcLambda (vars,env',exps)) -> 
+        eval 
+          (ExprProcCall(ExprLambda(vars,exps),lst)) 
+          (Environment.combine_environments env env')
       | _ -> failwith "Variable is not bound to function in environment."
     else
       failwith "Variable is not bound in environment."
+
+  | ExprProcCall (ExprLambda (vars,exps),args) ->
+    let rec populate_env vars args acc =
+      match vars,args with
+      | v::t1, a::t2 -> 
+        print_endline (string_of_value (eval a acc));
+        let env' = Environment.add_binding acc (v,ref (eval a acc)) in
+        populate_env t1 t2 env'
+      | [],[] -> acc
+      | _ -> failwith "Mismatched variables and arguments." in
+    let env' = populate_env vars args Environment.empty_environment in
+    let env' = Environment.combine_environments env' env in 
+    List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps 
 
   | ExprIf (guard, t, f) ->
     if (eval guard env) = ValDatum (Atom (Boolean true)) then
@@ -205,25 +270,3 @@ let eval_toplevel (toplevel : toplevel) (env : environment) :
   | ToplevelDefinition (_, _)     ->
      failwith "I couldn't have done it without the Rower!"
 
-let rec string_of_value value =
-  let rec string_of_datum datum =
-    match datum with
-    | Atom (Boolean b) -> if b then "#t" else "#f"
-    | Atom (Integer n) -> string_of_int n
-    | Atom (Identifier id) -> Identifier.string_of_identifier id
-    | Nil -> "()"
-    | Cons (car, cdr) -> string_of_cons car cdr
-
-  and string_of_cons car cdr =
-    let rec strings_of_cons cdr =
-      match cdr with
-      | Nil -> []
-      | Cons (car, cdr) -> (string_of_datum car) :: (strings_of_cons cdr)
-      | _ -> ["."; string_of_datum cdr;] in
-    let string_list = (string_of_datum car) :: (strings_of_cons cdr) in
-    "(" ^ (String.concat " " string_list) ^ ")" in
-  
-  match value with
-  | ValDatum (datum) -> string_of_datum datum
-  | ValProcedure (ProcBuiltin p) -> "#<builtin>"
-  | ValProcedure (ProcLambda (_, _, _)) -> "#<lambda>"
