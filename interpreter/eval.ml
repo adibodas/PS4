@@ -88,7 +88,61 @@ let rec read_expression (input : datum) : expression =
     else
       failwith "Invalid variable name."
 
-  | Cons (Atom (Identifier id),cdr) ->
+  | Cons ((Cons ((Atom (Identifier id)),_) as lambda),args) when Identifier.string_of_identifier id = "lambda" -> 
+    let rec parse_args lst acc =
+      match lst with
+      | Cons(arg,Nil) -> List.rev((read_expression arg)::acc)
+      | Cons(arg,tail) -> parse_args tail ((read_expression arg)::acc)
+      | _ -> failwith "Invalid arguments." in
+    let result = read_expression lambda in
+    (match result with
+    | ExprLambda _ -> ExprProcCall (result, parse_args args [])
+    | _ -> failwith "Invalid lambda syntax (also this case should fail earlier)."
+    )
+
+  | Cons (Atom (Identifier i),Cons (lets,exps)) when Identifier.string_of_identifier i = "let*"  ->
+    let rec parse_lets bindings lst =
+      match lst with
+      | Cons(Cons(Atom(Identifier id),Cons(exp,Nil)),Nil) ->
+        if Identifier.is_valid_variable id then 
+          List.rev ((Identifier.variable_of_identifier id,read_expression exp)::bindings)
+        else
+          failwith "Invalid variable names."
+      | Cons(Cons(Atom(Identifier id),Cons(exp,Nil)),tail) -> 
+        if Identifier.is_valid_variable id then
+          parse_lets ((Identifier.variable_of_identifier id, read_expression exp)::bindings) tail
+        else
+          failwith "Invalid variable names."
+      | _ -> failwith "Invalid let* syntax." in
+    let rec parse_exps input acc =
+      match input with
+      | Cons (exp,Nil) -> List.rev ((read_expression exp)::[])
+      | Cons (h,t) -> parse_exps t ((read_expression h)::acc)
+      | d -> [read_expression d] in
+    ExprLetStar (parse_lets [] lets, parse_exps exps [])
+
+  | Cons (Atom (Identifier i),Cons (lets,exps)) when Identifier.string_of_identifier i = "let"  ->
+    let rec parse_lets bindings names lst =
+      match lst with
+      | Cons(Cons(Atom(Identifier id),Cons(exp,Nil)),Nil) ->
+        if Identifier.is_valid_variable id && not(List.mem id names) then 
+          List.rev ((Identifier.variable_of_identifier id,read_expression exp)::bindings)
+        else
+          failwith "Invalid variable names."
+      | Cons(Cons(Atom(Identifier id),Cons(exp,Nil)),tail) -> 
+        if Identifier.is_valid_variable id then
+          parse_lets ((Identifier.variable_of_identifier id, read_expression exp)::bindings) (id::names) tail
+        else
+          failwith "Invalid variable names."
+      | _ -> failwith "Invalid let* syntax." in
+    let rec parse_exps input acc =
+      match input with
+      | Cons (exp,Nil) -> List.rev ((read_expression exp)::[])
+      | Cons (h,t) -> parse_exps t ((read_expression h)::acc)
+      | d -> [read_expression d] in
+    ExprLet (parse_lets [] [] lets, parse_exps exps []) 
+
+  | Cons (Atom (Identifier id),cdr) (*For generic procedure calls*)->
     let rec parse_args lst acc =
       match lst with
       | Cons(arg,Nil) -> List.rev((read_expression arg)::acc)
@@ -100,23 +154,6 @@ let rec read_expression (input : datum) : expression =
     else 
       failwith "Variable is not valid."
 
-  | Cons (
-      (Cons (
-        (Atom (Identifier id)),
-        _) as lambda),
-      args) 
-      when Identifier.string_of_identifier id = "lambda" 
-      -> 
-    let rec parse_args lst acc =
-      match lst with
-      | Cons(arg,Nil) -> List.rev((read_expression arg)::acc)
-      | Cons(arg,tail) -> parse_args tail ((read_expression arg)::acc)
-      | _ -> failwith "Invalid arguments." in
-    let result = read_expression lambda in
-    (match result with
-    | ExprLambda _ -> ExprProcCall (result, parse_args args [])
-    | _ -> failwith "Invalid lambda syntax (also this case should fail earlier)."
-    )
   | _ -> failwith "Not implemented"
 
 
@@ -166,6 +203,10 @@ let rec initial_environment () : environment =
     match val_list with
     | x::y::[] -> ValDatum(Atom(Boolean(x=y)))
     | _ -> failwith "Invalid use of \"equal?\" operator" in
+  let evaluate (val_list : value list) (env : environment) =
+    match val_list with
+    | (ValDatum d)::[] -> eval (read_expression d) env
+    | _ -> failwith "Invalid use of \"eval\" operator" in
   let env = Environment.add_binding 
     (Environment.empty_environment) 
     (Identifier.variable_of_identifier (Identifier.identifier_of_string "course"),ref (ValDatum (Atom (Integer 3110)))) in 
@@ -184,9 +225,12 @@ let rec initial_environment () : environment =
   let env = Environment.add_binding 
     env 
     (Identifier.variable_of_identifier (Identifier.identifier_of_string "cdr"),ref (ValProcedure (ProcBuiltin(cdr)))) in
+  let env = Environment.add_binding 
+    env 
+    (Identifier.variable_of_identifier (Identifier.identifier_of_string "equal?"),ref (ValProcedure (ProcBuiltin(equal)))) in
   Environment.add_binding 
     env 
-    (Identifier.variable_of_identifier (Identifier.identifier_of_string "equal?"),ref (ValProcedure (ProcBuiltin(equal)))) 
+    (Identifier.variable_of_identifier (Identifier.identifier_of_string "eval"),ref (ValProcedure (ProcBuiltin(evaluate)))) 
 
 (* Evaluates an expression down to a value in a given environment. *)
 (* You may want to add helper functions to make this function more
@@ -255,9 +299,15 @@ and eval (expression : expression) (env : environment) : value =
     else
       failwith "Variable is not bound within the environment."
 
-  | ExprLet (_, _)
+  | ExprLet (lets, exps) ->
+    let bindings = List.fold_left (fun acc (var,exp) -> (var,ref (eval exp env))::acc) [] lets in
+    let env' = List.fold_left Environment.add_binding env bindings in
+    List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps
 
-  | ExprLetStar (_, _)
+  | ExprLetStar (lets, exps) ->
+    let env' = 
+      List.fold_left (fun acc (var,exp) -> Environment.add_binding acc (var, ref (eval exp acc))) env lets in
+    List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps
 
   | ExprLetRec (_, _)     ->
      failwith "Ahahaha!  That is classic Rower."
