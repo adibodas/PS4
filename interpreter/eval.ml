@@ -64,9 +64,7 @@ let rec read_expression (input : datum) : expression =
     )
 
   | Cons (Atom (Identifier i),Cons (vars,exps)) when Identifier.string_of_identifier i = "lambda"  ->
-    print_endline "lambda";
     let rec parse_vars input acc =
-      print_endline "1";
       match input with
       | Cons (Atom(Identifier id),Nil) -> List.rev ((Identifier.variable_of_identifier id)::acc)
       | Cons (Atom(Identifier id),t) -> 
@@ -76,24 +74,21 @@ let rec read_expression (input : datum) : expression =
           failwith "Invalid variable names."
        | _ -> failwith "Invalid variable bindings in lambda expression." in 
     let rec parse_exps input acc =
-      print_endline "2";
       match input with
       | Cons (exp,Nil) -> List.rev ((read_expression exp)::[])
       | Cons (h,t) -> parse_exps t ((read_expression h)::acc)
       | d -> [read_expression d] in
     (match exps with
-    | Nil -> failwith "Invalid lambda syntax"
+    | Nil -> failwith "Invalid lambda syntax."
     | _ -> ExprLambda ((parse_vars vars []),(parse_exps exps [])))
-    
-(*| Cons (Atom (Identifier i),cdr) when i = "define" 
-  | Cons (Atom (Identifier i),cdr) when i = "set!"
-    (match cdr with 
-    | (Cons(id,exp)) -> ExprAssignment id (read_expression exp)
-    | _ -> failwith "Invalid assignment of variable."
-    ) *)
+
+  | Cons (Atom (Identifier i),Cons(Atom (Identifier (id)), Cons(exp,Nil))) when Identifier.string_of_identifier i = "set!" ->
+    if Identifier.is_valid_variable id then
+      ExprAssignment(Identifier.variable_of_identifier id,read_expression exp)
+    else
+      failwith "Invalid variable name."
 
   | Cons (Atom (Identifier id),cdr) ->
-    print_endline (Identifier.string_of_identifier id);
     let rec parse_args lst acc =
       match lst with
       | Cons(arg,Nil) -> List.rev((read_expression arg)::acc)
@@ -112,7 +107,6 @@ let rec read_expression (input : datum) : expression =
       args) 
       when Identifier.string_of_identifier id = "lambda" 
       -> 
-    print_endline "lambda_call";
     let rec parse_args lst acc =
       match lst with
       | Cons(arg,Nil) -> List.rev((read_expression arg)::acc)
@@ -133,7 +127,6 @@ let rec read_expression (input : datum) : expression =
 let read_toplevel (input : datum) : toplevel =
   match input with
   | Cons (Atom (Identifier (i)),Cons(Atom (Identifier var),Cons(exp,Nil))) when Identifier.string_of_identifier i = "define" ->
-    print_endline "hello";
     if Identifier.is_valid_variable var then
       ToplevelDefinition (Identifier.variable_of_identifier var,read_expression exp)
     else
@@ -143,7 +136,7 @@ let read_toplevel (input : datum) : toplevel =
 (* This function returns an initial environment with any built-in
    bound variables. *)
 let rec initial_environment () : environment =
-  let add (val_list : value list) (env : environment) = print_endline "add";
+  let add (val_list : value list) (env : environment) = 
     let rec helper acc lst = 
       match lst with 
       | [] -> acc
@@ -240,7 +233,6 @@ and eval (expression : expression) (env : environment) : value =
     let rec populate_env vars args acc =
       match vars,args with
       | v::t1, a::t2 -> 
-        print_endline (string_of_value (eval a acc));
         let env' = Environment.add_binding acc (v,ref (eval a acc)) in
         populate_env t1 t2 env'
       | [],[] -> acc
@@ -255,8 +247,13 @@ and eval (expression : expression) (env : environment) : value =
     else
       eval f env
 
-  | ExprAssignment (_, _) ->
-     failwith "Say something funny, Rower!"
+  | ExprAssignment (var, exp) ->
+    if Environment.is_bound env var then
+      let v = Environment.get_binding env var in
+      v := (eval exp env);
+      ValDatum(Nil)
+    else
+      failwith "Variable is not bound within the environment."
 
   | ExprLet (_, _)
 
