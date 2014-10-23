@@ -39,30 +39,23 @@ let rec string_of_value value =
 (* Parses a datum into an expression. *)
 let rec read_expression (input : datum) : expression =
   match input with
-
   | Atom (Identifier id) when Identifier.is_valid_variable id ->
       ExprVariable (Identifier.variable_of_identifier id)
-
   | Atom (Identifier id) ->
     (* Above match case didn't succeed, so id is not a valid variable. *)
     failwith "Identifier is not a valid variable."
-
   | Atom (Integer i) -> ExprSelfEvaluating (SEInteger i)
-
   | Atom (Boolean b) -> ExprSelfEvaluating (SEBoolean b)
-
   | Cons (Atom (Identifier i),cdr) when Identifier.string_of_identifier i = "quote" -> 
     (match cdr with
     | Cons(d,Nil) -> ExprQuote d
     | _ -> failwith "Invalid call of quote.")
-
   | Cons (Atom (Identifier i),cdr) when Identifier.string_of_identifier i = "if" ->
     (match cdr with
     | (Cons(guard,Cons(e1,Cons(e2,Nil)))) -> 
       ExprIf (read_expression guard,read_expression e1,read_expression e2)
     | _ -> failwith "Invalid \"if\" expression."
     )
-
   | Cons (Atom (Identifier i),Cons (vars,exps)) when Identifier.string_of_identifier i = "lambda"  ->
     let rec parse_vars input acc =
       match input with
@@ -81,13 +74,11 @@ let rec read_expression (input : datum) : expression =
     (match exps with
     | Nil -> failwith "Invalid lambda syntax."
     | _ -> ExprLambda ((parse_vars vars []),(parse_exps exps [])))
-
   | Cons (Atom (Identifier i),Cons(Atom (Identifier (id)), Cons(exp,Nil))) when Identifier.string_of_identifier i = "set!" ->
     if Identifier.is_valid_variable id then
       ExprAssignment(Identifier.variable_of_identifier id,read_expression exp)
     else
       failwith "Invalid variable name."
-
   | Cons ((Cons ((Atom (Identifier id)),_) as lambda),args) when Identifier.string_of_identifier id = "lambda" -> 
     let rec parse_args lst acc =
       match lst with
@@ -99,7 +90,6 @@ let rec read_expression (input : datum) : expression =
     | ExprLambda _ -> ExprProcCall (result, parse_args args [])
     | _ -> failwith "Invalid lambda syntax (also this case should fail earlier)."
     )
-
   | Cons (Atom (Identifier i),Cons (lets,exps)) when Identifier.string_of_identifier i = "let*"  ->
     let rec parse_lets bindings lst =
       match lst with
@@ -120,7 +110,6 @@ let rec read_expression (input : datum) : expression =
       | Cons (h,t) -> parse_exps t ((read_expression h)::acc)
       | d -> [read_expression d] in
     ExprLetStar (parse_lets [] lets, parse_exps exps [])
-
   | Cons (Atom (Identifier i),Cons (lets,exps)) when Identifier.string_of_identifier i = "let"  ->
     let rec parse_lets bindings names lst =
       match lst with
@@ -141,7 +130,26 @@ let rec read_expression (input : datum) : expression =
       | Cons (h,t) -> parse_exps t ((read_expression h)::acc)
       | d -> [read_expression d] in
     ExprLet (parse_lets [] [] lets, parse_exps exps []) 
-
+  | Cons (Atom (Identifier i),Cons (lets,exps)) when Identifier.string_of_identifier i = "letrec"  ->
+    let rec parse_lets bindings names lst =
+      match lst with
+      | Cons(Cons(Atom(Identifier id),Cons(exp,Nil)),Nil) ->
+        if Identifier.is_valid_variable id && not(List.mem id names) then 
+          List.rev ((Identifier.variable_of_identifier id,read_expression exp)::bindings)
+        else
+          failwith "Invalid variable names."
+      | Cons(Cons(Atom(Identifier id),Cons(exp,Nil)),tail) -> 
+        if Identifier.is_valid_variable id then
+          parse_lets ((Identifier.variable_of_identifier id, read_expression exp)::bindings) (id::names) tail
+        else
+          failwith "Invalid variable names."
+      | _ -> failwith "Invalid letrec syntax." in
+    let rec parse_exps input acc =
+      match input with
+      | Cons (exp,Nil) -> List.rev ((read_expression exp)::[])
+      | Cons (h,t) -> parse_exps t ((read_expression h)::acc)
+      | d -> [read_expression d] in
+    ExprLetRec (parse_lets [] [] lets, parse_exps exps []) 
   | Cons (Atom (Identifier id),cdr) (*For generic procedure calls*)->
     let rec parse_args lst acc =
       match lst with
@@ -153,12 +161,7 @@ let rec read_expression (input : datum) : expression =
       ExprProcCall ((ExprVariable var), parse_args cdr [])
     else 
       failwith "Variable is not valid."
-
-  | _ -> failwith "Not implemented"
-
-
-
-
+  | _ -> failwith "Not a valid expression."
 
 (* Parses a datum into a toplevel input. *)
 let read_toplevel (input : datum) : toplevel =
@@ -240,21 +243,16 @@ let rec initial_environment () : environment =
 and eval (expression : expression) (env : environment) : value =
   match expression with
   | ExprSelfEvaluating (SEBoolean b) -> ValDatum (Atom (Boolean b))
-
   | ExprSelfEvaluating (SEInteger i) -> ValDatum (Atom (Integer i))
-
   | ExprVariable v ->
     if Environment.is_bound env v then
       !(Environment.get_binding env v)
     else
       failwith "Variable is not bound in environment."
-
   | ExprQuote d ->
       ValDatum d
-
   | ExprLambda (vars,exps) -> 
       ValProcedure(ProcLambda (vars,env,exps))
-
   | ExprProcCall (ExprVariable var,lst) ->
     if Environment.is_bound env var then 
       let res = !(Environment.get_binding env var) in
@@ -266,13 +264,10 @@ and eval (expression : expression) (env : environment) : value =
           | h::t -> parse_args t ((eval h env)::acc) in
         p (List.rev((parse_args lst []))) env
       | ValProcedure(ProcLambda (vars,env',exps)) -> 
-        eval 
-          (ExprProcCall(ExprLambda(vars,exps),lst)) 
-          (Environment.combine_environments env env')
+        eval (ExprProcCall(ExprLambda(vars,exps),lst)) env'
       | _ -> failwith "Variable is not bound to function in environment."
     else
       failwith "Variable is not bound in environment."
-
   | ExprProcCall (ExprLambda (vars,exps),args) ->
     let rec populate_env vars args acc =
       match vars,args with
@@ -284,13 +279,11 @@ and eval (expression : expression) (env : environment) : value =
     let env' = populate_env vars args Environment.empty_environment in
     let env' = Environment.combine_environments env' env in 
     List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps 
-
   | ExprIf (guard, t, f) ->
     if (eval guard env) = ValDatum (Atom (Boolean true)) then
       eval t env
     else
       eval f env
-
   | ExprAssignment (var, exp) ->
     if Environment.is_bound env var then
       let v = Environment.get_binding env var in
@@ -298,28 +291,29 @@ and eval (expression : expression) (env : environment) : value =
       ValDatum(Nil)
     else
       failwith "Variable is not bound within the environment."
-
   | ExprLet (lets, exps) ->
     let bindings = List.fold_left (fun acc (var,exp) -> (var,ref (eval exp env))::acc) [] lets in
     let env' = List.fold_left Environment.add_binding env bindings in
     List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps
-
   | ExprLetStar (lets, exps) ->
     let env' = 
       List.fold_left (fun acc (var,exp) -> Environment.add_binding acc (var, ref (eval exp acc))) env lets in
     List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps
-
-  | ExprLetRec (_, _)     ->
-     failwith "Ahahaha!  That is classic Rower."
-
-  | _ -> failwith "TODO"
+  | ExprLetRec (lets, exps) ->
+    let env' = List.fold_left (fun acc (var,_) -> Environment.add_binding acc (var, ref (ValDatum(Atom(Integer 0))))) env lets in
+    let () = List.fold_left 
+      (fun _ (var,exp) ->
+        let v = Environment.get_binding env' var in
+        v := (eval exp env'); 
+      ) () lets in
+    List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps
+  | _ -> failwith "Not a valid expression."
 
 (* Evaluates a toplevel input down to a value and an output environment in a
    given environment. *)
-let eval_toplevel (toplevel : toplevel) (env : environment) :
-      value * environment =
+let eval_toplevel (toplevel : toplevel) (env : environment) : value * environment =
   match toplevel with
   | ToplevelExpression expression -> (eval expression env, env)
-  | ToplevelDefinition (var, exp)     ->
+  | ToplevelDefinition (var, exp) ->
     (ValDatum(Nil),Environment.add_binding env (var, ref (eval exp env)))
 
