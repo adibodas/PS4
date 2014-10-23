@@ -123,7 +123,7 @@ let rec read_expression (input : datum) : expression =
           parse_lets ((Identifier.variable_of_identifier id, read_expression exp)::bindings) (id::names) tail
         else
           failwith "Invalid variable names."
-      | _ -> failwith "Invalid let* syntax." in
+      | _ -> failwith "Invalid let syntax." in
     let rec parse_exps input acc =
       match input with
       | Cons (exp,Nil) -> List.rev ((read_expression exp)::[])
@@ -213,27 +213,13 @@ let rec initial_environment () : environment =
   let env = Environment.add_binding 
     (Environment.empty_environment) 
     (Identifier.variable_of_identifier (Identifier.identifier_of_string "course"),ref (ValDatum (Atom (Integer 3110)))) in 
-  let env = Environment.add_binding 
-    env 
-    (Identifier.variable_of_identifier (Identifier.identifier_of_string "+"),ref (ValProcedure (ProcBuiltin(add)))) in
-  let env = Environment.add_binding 
-    env 
-    (Identifier.variable_of_identifier (Identifier.identifier_of_string "*"),ref (ValProcedure (ProcBuiltin(mult)))) in
-  let env = Environment.add_binding 
-    env 
-    (Identifier.variable_of_identifier (Identifier.identifier_of_string "cons"),ref (ValProcedure (ProcBuiltin(cons)))) in
-  let env = Environment.add_binding 
-    env 
-    (Identifier.variable_of_identifier (Identifier.identifier_of_string "car"),ref (ValProcedure (ProcBuiltin(car)))) in
-  let env = Environment.add_binding 
-    env 
-    (Identifier.variable_of_identifier (Identifier.identifier_of_string "cdr"),ref (ValProcedure (ProcBuiltin(cdr)))) in
-  let env = Environment.add_binding 
-    env 
-    (Identifier.variable_of_identifier (Identifier.identifier_of_string "equal?"),ref (ValProcedure (ProcBuiltin(equal)))) in
-  Environment.add_binding 
-    env 
-    (Identifier.variable_of_identifier (Identifier.identifier_of_string "eval"),ref (ValProcedure (ProcBuiltin(evaluate)))) 
+  let bindings = [("+",add);("*",mult);("cons",cons);("car",car);("cdr",cdr);("equal?",equal);("eval",evaluate)] in
+  List.fold_left 
+    (fun acc (str,f) ->
+      Environment.add_binding 
+      acc 
+      (Identifier.variable_of_identifier (Identifier.identifier_of_string str),ref (ValProcedure (ProcBuiltin(f))))
+    ) env bindings
 
 (* Evaluates an expression down to a value in a given environment. *)
 (* You may want to add helper functions to make this function more
@@ -248,11 +234,9 @@ and eval (expression : expression) (env : environment) : value =
     if Environment.is_bound env v then
       !(Environment.get_binding env v)
     else
-      failwith "Variable is not bound in environment."
-  | ExprQuote d ->
-      ValDatum d
-  | ExprLambda (vars,exps) -> 
-      ValProcedure(ProcLambda (vars,env,exps))
+      failwith ((Identifier.string_of_variable v)^" is not bound within the environment (look-up).")
+  | ExprQuote d -> ValDatum d
+  | ExprLambda (vars,exps) -> ValProcedure(ProcLambda (vars,env,exps))
   | ExprProcCall (ExprVariable var,lst) ->
     if Environment.is_bound env var then 
       let res = !(Environment.get_binding env var) in
@@ -267,9 +251,9 @@ and eval (expression : expression) (env : environment) : value =
         eval (ExprProcCall(ExprLambda(vars,exps),lst)) env'
       | _ -> failwith "Variable is not bound to function in environment."
     else
-      failwith "Variable is not bound in environment."
+      failwith ((Identifier.string_of_variable var)^" is not bound within the environment (procedure call).")
   | ExprProcCall (ExprLambda (vars,exps),args) ->
-    let rec populate_env vars args acc =
+    let rec populate_env vars args acc = 
       match vars,args with
       | v::t1, a::t2 -> 
         let env' = Environment.add_binding acc (v,ref (eval a acc)) in
@@ -290,7 +274,7 @@ and eval (expression : expression) (env : environment) : value =
       v := (eval exp env);
       ValDatum(Nil)
     else
-      failwith "Variable is not bound within the environment."
+      failwith ((Identifier.string_of_variable var)^" is not bound within the environment (assignment).")
   | ExprLet (lets, exps) ->
     let bindings = List.fold_left (fun acc (var,exp) -> (var,ref (eval exp env))::acc) [] lets in
     let env' = List.fold_left Environment.add_binding env bindings in
@@ -300,13 +284,13 @@ and eval (expression : expression) (env : environment) : value =
       List.fold_left (fun acc (var,exp) -> Environment.add_binding acc (var, ref (eval exp acc))) env lets in
     List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps
   | ExprLetRec (lets, exps) ->
-    let env' = List.fold_left (fun acc (var,_) -> Environment.add_binding acc (var, ref (ValDatum(Atom(Integer 0))))) env lets in
-    let () = List.fold_left 
-      (fun _ (var,exp) ->
-        let v = Environment.get_binding env' var in
-        v := (eval exp env'); 
-      ) () lets in
-    List.fold_left (fun _ e -> eval e env') (ValDatum(Nil)) exps
+    let new_env = List.fold_left 
+      (fun acc (var,_) -> 
+        Environment.add_binding acc (var, ref (ValDatum(Atom(Integer 0))))
+      ) env lets in
+    let _ = List.fold_left 
+      (fun _ (var,exp) -> (eval (ExprAssignment(var,exp)) (new_env))) (ValDatum(Nil)) lets in
+    List.fold_left (fun _ e -> eval e new_env) (ValDatum(Nil)) exps
   | _ -> failwith "Not a valid expression."
 
 (* Evaluates a toplevel input down to a value and an output environment in a
@@ -315,5 +299,9 @@ let eval_toplevel (toplevel : toplevel) (env : environment) : value * environmen
   match toplevel with
   | ToplevelExpression expression -> (eval expression env, env)
   | ToplevelDefinition (var, exp) ->
-    (ValDatum(Nil),Environment.add_binding env (var, ref (eval exp env)))
+    if Environment.is_bound env var then
+      let v = (eval (ExprAssignment(var,exp)) env) in (v,env)
+    else
+      let new_env = Environment.add_binding env (var, ref (ValDatum(Atom(Integer 0)))) in
+      let v = (eval (ExprAssignment(var,exp)) new_env) in (v,new_env)
 
