@@ -1,3 +1,0 @@
-I (Adi Bodas) did Problems 1, 2, and 3, and most of the test-cases. My partner did the read_expression tests.
-
-This problem set was really long, though once you got the overall gist of how Scheme3110 worked, it went a lot faster, though I think I hacked a little on letrec. 
