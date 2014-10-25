@@ -47,22 +47,19 @@ module type INORDER_TREE_ITERATOR = sig
 end
 
 module InorderTreeIterator : INORDER_TREE_ITERATOR = struct
-  type 'a t = 'a list ref
+  module L = ListIterator
+  type 'a t = 'a L.t
   exception NoResult
-
-  (*have to make this efficient*)
   let create (t : 'a tree) : 'a t = 
     let rec helper t = 
       match t with 
       | Leaf -> []
       | Node (v, l, r) -> (helper l) @ [v] @ (helper r) in
-    ref (helper t)
+    L.create (helper t)
 
-  let has_next (r : 'a t) : bool = !r <> []
+  let has_next (r : 'a t) : bool = L.has_next r
   let next (r : 'a t) : 'a = 
-    match !r with
-    | [] -> raise NoResult
-    | h::t -> r := t; h
+    if L.has_next r then L.next r else raise NoResult
 end
 
 

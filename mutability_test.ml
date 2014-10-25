@@ -22,7 +22,11 @@ TEST_UNIT "tabulate_1" =
 	assert_true (tabulate (fun x -> x*x) 10 = [|0;1;4;9;16;25;36;49;64;81|])
 TEST_UNIT "tabulate_2" =
 	assert_true (tabulate (fun x -> x) 0 = [||])
-
+TEST_UNIT "tabulate_3" =
+	assert_raises 
+		(Some (Failure "Tried to initialize with negative indices."))
+		(tabulate (fun x -> x))
+		(-1)
 
 TEST_UNIT "fold_1" =
 	assert_true (fold_left_imp (+) 0 [1;2;3;4;5;6;7;8;9] = 45)
@@ -33,4 +37,8 @@ TEST_UNIT "fold_3" =
 
 
 TEST_UNIT "zardoz_1" =
-	assert_false (List.rev (List.map zardoz lst) = List.map zardoz (List.rev lst))
+	assert_false (
+		List.rev (List.map zardoz lst) = List.map zardoz (List.rev lst)
+	)
+
+let () = Pa_ounit_lib.Runtime.summarize()

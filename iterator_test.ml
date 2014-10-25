@@ -125,3 +125,5 @@ TEST_UNIT "RangeIterator_5" =
 	assert_raises (Some NoResult) next range_iter
 TEST_UNIT "RangeIterator_6" =
 	assert_raises (Some NoResult) (create 5 4) (ListIterator.create [1])
+
+let () = Pa_ounit_lib.Runtime.summarize()
